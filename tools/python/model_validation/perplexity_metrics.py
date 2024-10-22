@@ -1,6 +1,6 @@
 from datasets import load_dataset
 import numpy as np
-from onnxruntime_genai import Generator, Model
+import onnxruntime_genai as og
 import torch
 
 def get_wikitext2():
@@ -8,9 +8,8 @@ def get_wikitext2():
     return testdata
 
 def perplexity_eval(model_dir):
-    model = Model(model_dir)
-    tokenizer = model.Tokenizer(model)
-    input_ids = tokenizer.nocde_batchtexts
+    model = og.Model(f'{model_dir}')
+    tokenizer = og.Tokenizer(model)
 
     dataset = get_wikitext2()
 
@@ -19,11 +18,11 @@ def perplexity_eval(model_dir):
 
         input_ids = tokenizer.encode_batch([text])
 
-        generator_params = model.GeneratorParams(model)
-        generator_params.set_model_input("input_ids", input_ids)
-        generator = Generator(model, generator_params)
+        params = og.GeneratorParams(model)
+        params.set_model_input("input_ids", input_ids)
+        generator = og.Generator(model, params)
 
-        logits = generator.get_output("logits")
+        logits = generator.compute_logits()
 
         targets = np.roll(input_ids, -1, axis=1)
 
