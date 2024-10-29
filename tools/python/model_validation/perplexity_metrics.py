@@ -4,17 +4,21 @@ import onnxruntime_genai as og
 import torch
 
 def get_wikitext2():
-    testdata = load_dataset('wikitext', 'wikitext-2-raw-v1', split='test')
-    return testdata
+    test = load_dataset('wikitext', 'wikitext-2-raw-v1', split='test')
+    # Concatenate the text with "\n\n" separator
+    result = "\n\n".join(text for text in test["text"])
+    return result
 
 def perplexity_eval(model_dir):
+    # Load the model and tokenizer
     model = og.Model(f'{model_dir}')
     tokenizer = og.Tokenizer(model)
 
-    dataset = get_wikitext2()
-
     total_log_probs = 0
     total_token_count = 0
+
+    # Concatenated text 
+    dataset = get_wikitext2()
 
     for batch in dataset:
         text = batch["text"]
@@ -26,7 +30,7 @@ def perplexity_eval(model_dir):
 
         logits = generator.compute_logits("logits")
 
-        targets = np.roll(input_ids, -1, axis=1)
+        targets = np.roll(input_ids, -1, axis=-1)
 
         # Use LogSoftMax here
         log_probs = torch.nn.functional.log_softmax(torch.tensor(logits), dim=1).numpy()
