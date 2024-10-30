@@ -20,26 +20,54 @@ def perplexity_eval(model_dir):
     # Concatenated text 
     dataset = get_wikitext2()
 
-    for batch in dataset:
-        text = batch["text"]
+    # Encode the entire dataset as one batch
+    input_ids = tokenizer.encode_batch([dataset])
+    input_ids = torch.tensor(input_ids)
+    print(f"input_ids shape: {input_ids.shape}")
 
-        input_ids = tokenizer.encode_batch([text])
+    # Need to retreive the Model's maximum via the ORT GenAI configuration
+    max_length = 32767 # This is the default for qwen
+    stride = max_length 
+    seq_len = input_ids.size(1)
+
+    prev_end_loc = 0
+
+    # Hugging face looping logic
+    for begin_loc in range(0, seq_len, stride):
+        end_loc = min(begin_loc + max_length, seq_len)
+        trg_len = end_loc - prev_end_loc 
+        input_ids_chunk = input_ids[:, begin_loc:end_loc]
+        target_ids = input_ids_chunk.clone()
+        target_ids[:, :-trg_len] = -100
+        print(f"input_ids_chunk shape: {input_ids_chunk.shape}")
+        print(f"target_ids shape: {target_ids.shape}")
 
         params = og.GeneratorParams(model)
+        params.input_ids = input_ids_chunk.numpy()
+
         generator = og.Generator(model, params)
 
-        logits = generator.compute_logits("logits")
+        # Get Logits 
+        with torch.no_grad():
+            generator.compute_logits()
+            logits = generator.get_output("logits")
+        print(f"logits shape: {logits.shape}")
 
-        targets = np.roll(input_ids, -1, axis=-1)
+        # Calculate LogSoftMax
+        log_probs = torch.nn.functional.log_softmax(torch.tensor(logits), dim=2).numpy()
+        print(f"log_probs shape: {log_probs.shape}")
 
-        # Use LogSoftMax here
-        log_probs = torch.nn.functional.log_softmax(torch.tensor(logits), dim=1).numpy()
-
-        batch_size, seq_length = targets.shape
-        target_log_probs = log_probs[np.arange(batch_size)[:, None], np.arange(seq_length), targets]
+        # Deduce target_id from input id 
+        batch_size, seq_length = target_ids.shape
+        target_log_probs = log_probs[np.arange(batch_size)[:, None], np.arange(seq_length), target_ids.numpy()]
+        print(f"target_log_probs shape: {target_log_probs.shape}")
 
         total_log_probs += np.sum(target_log_probs)
-        total_token_count += targets.size
+        total_token_count += target_ids.numel()
+
+        prev_end_loc = end_loc
+        if end_loc == seq_len:
+            break
 
     avg_log_prob = total_log_probs / total_token_count
     perplexity = np.exp(-avg_log_prob)
