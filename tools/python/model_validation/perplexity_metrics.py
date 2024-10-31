@@ -5,7 +5,7 @@ import torch
 
 def get_wikitext2():
     test = load_dataset('wikitext', 'wikitext-2-raw-v1', split='test')
-    # Concatenate the text with "\n\n" separator
+    # Concatenate the text with "\n\n" separator,
     result = "\n\n".join(text for text in test["text"])
     return result
 
@@ -26,8 +26,10 @@ def perplexity_eval(model_dir):
     print(f"input_ids shape: {input_ids.shape}")
 
     # Need to retreive the Model's maximum via the ORT GenAI configuration
-    max_length = 32767 # This is the default for qwen
-    stride = max_length 
+    # Get maximum length from genai config file -> "context_length"
+    max_length = 512 # This is the default for qwen
+    stride = 512 
+    # Just get the perplexity for one position
     seq_len = input_ids.size(1)
 
     prev_end_loc = 0
@@ -45,6 +47,8 @@ def perplexity_eval(model_dir):
         params = og.GeneratorParams(model)
         params.input_ids = input_ids_chunk.numpy()
 
+        print(f"params input ids shape: {params.input_ids.shape}")
+
         generator = og.Generator(model, params)
 
         # Get Logits 
@@ -57,13 +61,19 @@ def perplexity_eval(model_dir):
         log_probs = torch.nn.functional.log_softmax(torch.tensor(logits), dim=2).numpy()
         print(f"log_probs shape: {log_probs.shape}")
 
-        # Deduce target_id from input id 
-        batch_size, seq_length = target_ids.shape
-        target_log_probs = log_probs[np.arange(batch_size)[:, None], np.arange(seq_length), target_ids.numpy()]
+        # # Deduce target_id from input id 
+        # batch_size, seq_length = target_ids.shape
+        # target_log_probs = log_probs[np.arange(batch_size)[:, None], np.arange(seq_length), target_ids.numpy()]
+    #    selected_values = np.array([tensor[0, i, indices[i]] for i in range(len(indices))])
+        target_log_probs = np.array([log_probs[0, i, target_ids[i]] for i in range(len(target_ids))])        
+        # Try to generate 2, 5, 8
         print(f"target_log_probs shape: {target_log_probs.shape}")
 
         total_log_probs += np.sum(target_log_probs)
         total_token_count += target_ids.numel()
+
+        print(f"This is the total_log_probs {total_log_probs}")
+        print(f"This is the total_token_count {total_token_count}")
 
         prev_end_loc = end_loc
         if end_loc == seq_len:
